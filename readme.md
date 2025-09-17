@@ -6,6 +6,8 @@
 
 The GKE Intelligent Monitoring System is an advanced monitoring and management solution that combines the power of Google Kubernetes Engine (GKE) with AI-driven insights using Google's AI Development Kit (ADK) and Model Context Protocol (MCP). This system provides intelligent monitoring, automated troubleshooting, and proactive management capabilities for GKE clusters.
 
+![](https://github.com/w3sqr/k8s-mcp-and-adk-agent/blob/main/agent_k8s.gif)
+
 ## Features
 
 - **Intelligent Cluster Monitoring**
