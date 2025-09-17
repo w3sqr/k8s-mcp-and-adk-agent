@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adk-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: adk-agent
+  template:
+    metadata:
+      labels:
+        app: adk-agent
+    spec:
+      serviceAccount: adk-agent-sa
+      containers:
+      - name: adk-agent
+        imagePullPolicy: Always
+        image: us-central1-docker.pkg.dev/gcp-hk-boutique-001/adk-repo/adk-agent:latest
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+            ephemeral-storage: "128Mi"
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+            ephemeral-storage: "128Mi"
+        ports:
+        - containerPort: 8080
+        env:
+          - name: PORT
+            value: "8080"
+          - name: GOOGLE_CLOUD_PROJECT
+            value: gcp-hk-boutique-001
+          - name: GOOGLE_CLOUD_LOCATION
+            value: us-central1
+          - name: GOOGLE_GENAI_USE_VERTEXAI
+            value: "true"
+          # If using AI Studio, set GOOGLE_GENAI_USE_VERTEXAI to false and set the following:
+          # - name: GOOGLE_API_KEY
+          #   value: 
+          # Add any other necessary environment variables your agent might need
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adk-agent
+spec:       
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: adk-agent

@@ -1,0 +1,188 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-mcp-server
+  namespace: default
+  labels:
+    app: k8s-mcp-server
+    version: "1.0"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: k8s-mcp-server
+  template:
+    metadata:
+      labels:
+        app: k8s-mcp-server
+        version: "1.0"
+      annotations:
+        prometheus.io/scrape: "false"  # Disable Prometheus scraping if not needed
+    spec:
+      serviceAccountName: k8s-mcp-server
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: k8s-mcp-server
+        image: us-central1-docker.pkg.dev/gcp-hk-boutique-001/mcp-server/k8s-mcp-server:latestv2 
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: mcp-port
+          protocol: TCP
+        env:
+        # GCP Configuration
+        - name: GCP_PROJECT_ID
+          value: gcp-hk-boutique-001  # Replace with your actual project ID
+        - name: GKE_CLUSTER_NAME
+          value: online-boutique  # Replace with your actual cluster name
+        - name: GKE_ZONE
+          value: us-central1  # Replace with your actual region/zone
+        # MCP Server Configuration - Use SSE (HTTP) when running in-cluster so readiness probes work
+        - name: MCP_TRANSPORT
+          value: "sse"
+        # Kubernetes Configuration
+        - name: KUBERNETES_SERVICE_HOST
+          value: "kubernetes.default.svc"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "443"
+        # Pod Information
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "150m"
+            ephemeral-storage: "1Gi"
+          limits:
+            memory: "256Mi"
+            cpu: "150m"
+            ephemeral-storage: "2Gi"
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        # Security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # Allows kubectl to create temp files
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_RAW  # Required for ping and network tools
+        # Volume mounts for temporary files
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: home-volume
+          mountPath: /home/mcpuser
+      volumes:
+      - name: tmp-volume
+        emptyDir:
+          sizeLimit: "100Mi"
+      - name: home-volume
+        emptyDir:
+          sizeLimit: "100Mi"
+      # Pod-level security and scheduling
+      terminationGracePeriodSeconds: 30
+      restartPolicy: Always
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: "kubernetes.io/arch"
+        operator: "Equal"
+        value: "amd64"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - k8s-mcp-server
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-mcp-service
+  namespace: default
+  labels:
+    app: k8s-mcp-server
+spec:
+  type: ClusterIP
+  selector:
+    app: k8s-mcp-server
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: mcp-port
+  sessionAffinity: None
+---
+# Optional: NodePort service for development access
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-mcp-nodeport
+  namespace: default
+  labels:
+    app: k8s-mcp-server
+    service-type: nodeport
+spec:
+  type: NodePort
+  selector:
+    app: k8s-mcp-server
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: mcp-port
+    nodePort: 30080  # External access on port 30080
+  sessionAffinity: None
